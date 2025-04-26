@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+interface IERC20 {
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transfer(address to, uint256 value) external returns (bool);
+    function balanceOf(address owner) external view returns (uint256);
+}
+
+interface IERC721 {
+    function safeTransferFrom(address from, address to, uint256 tokenId) external;
+    function ownerOf(uint256 tokenId) external view returns (address);
+}
+
+interface IMarketplace {
+    function buyNFT(address nftContract, uint256 tokenId, uint256 price) external;
+    function sellNFT(address nftContract, uint256 tokenId, uint256 price) external;
+}
+
+contract NFTArbitrage {
+    address public owner;
+    IERC20 public paymentToken;
+
+    constructor(address _paymentToken) {
+        owner = msg.sender;
+        paymentToken = IERC20(_paymentToken);
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not authorized");
+        _;
+    }
+
+    function arbitrage(
+        address marketplaceBuy,
+        address marketplaceSell,
+        address nftContract,
+        uint256 tokenId,
+        uint256 buyPrice,
+        uint256 sellPrice
+    ) external onlyOwner {
+        require(paymentToken.balanceOf(address(this)) >= buyPrice, "Insufficient balance to buy");
+
+        // Approve marketplace to spend token
+        paymentToken.approve(marketplaceBuy, buyPrice);
+
+        // Buy NFT from marketplace 1
+        IMarketplace(marketplaceBuy).buyNFT(nftContract, tokenId, buyPrice);
+
+        // Approve marketplace 2 to transfer NFT
+        IERC721(nftContract).safeTransferFrom(address(this), marketplaceSell, tokenId);
+
+        // Sell NFT to marketplace 2
+        IMarketplace(marketplaceSell).sellNFT(nftContract, tokenId, sellPrice);
+    }
+
+    function withdrawTokens(address to) external onlyOwner {
+        uint256 balance = paymentToken.balanceOf(address(this));
+        require(balance > 0, "No tokens to withdraw");
+        paymentToken.transfer(to, balance);
+    }
+
+    function depositTokens(uint256 amount) external {
+        require(paymentToken.transferFrom(msg.sender, address(this), amount), "Deposit failed");
+    }
+}
